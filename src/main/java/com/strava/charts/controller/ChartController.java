@@ -109,6 +109,7 @@ public class ChartController {
     public void getDistanceOverTime(String code, String referenceDate) {
         final List<SummaryActivity> activities = getAthleteActivities(code, referenceDate, Boolean.FALSE);
 
+
     }
 
     private Map<String, List<SummaryActivity>> getRidesByDistanceRecord(String code, String referenceDate) {
