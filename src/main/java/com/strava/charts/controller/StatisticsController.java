@@ -1,10 +1,12 @@
 package com.strava.charts.controller;
 
 import com.strava.charts.service.AuthorizationService;
+import com.strava.charts.service.StatisticsService;
 import io.micrometer.core.annotation.Timed;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.client.ApiClient;
+import io.swagger.client.ApiException;
 import io.swagger.client.api.ActivitiesApi;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,11 +27,15 @@ public class StatisticsController {
      @Autowired
      AuthorizationService authorisationService;
 
+     @Autowired
+     StatisticsService statisticsService;
+
      @ApiOperation(value = "getMaxHeartRate", tags = "statistics-api")
      @RequestMapping(value = "/_get-max-heart-rate", produces = {
              "application/json"}, method = RequestMethod.GET)
      public int getMaxHeartRate(
-             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code", required = true) String code) {
+             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code", required = true) String code)
+             throws ApiException {
 
           if (accessToken == null) {
                accessToken = authorisationService.authorize(code);
@@ -39,9 +45,9 @@ public class StatisticsController {
           client.setAccessToken(accessToken);
 
           final ActivitiesApi activitiesApi = new ActivitiesApi(client);
-          //activitiesApi.getLoggedInAthleteActivities(
 
-          return 0;
+          return statisticsService.getMaxHearRateByActivityType(activitiesApi, code);
+
      }
 
 }
