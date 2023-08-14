@@ -8,6 +8,7 @@ import io.swagger.annotations.ApiParam;
 import io.swagger.client.ApiClient;
 import io.swagger.client.ApiException;
 import io.swagger.client.api.ActivitiesApi;
+import io.swagger.client.api.AthletesApi;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.threeten.bp.OffsetDateTime;
 
 @Slf4j
 @Validated
@@ -45,8 +47,11 @@ public class StatisticsController {
           client.setAccessToken(accessToken);
 
           final ActivitiesApi activitiesApi = new ActivitiesApi(client);
+          final AthletesApi athletesApi = new AthletesApi(client);
 
-          return statisticsService.getMaxHearRateByActivityType(activitiesApi, code);
+          OffsetDateTime createdAt = athletesApi.getLoggedInAthlete().getCreatedAt();
+          return statisticsService.getMaxHearRateByActivityType(activitiesApi, code,
+                  createdAt);
 
      }
 
