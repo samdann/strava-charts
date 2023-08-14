@@ -50,8 +50,7 @@ public class StatisticsController {
           final AthletesApi athletesApi = new AthletesApi(client);
 
           OffsetDateTime createdAt = athletesApi.getLoggedInAthlete().getCreatedAt();
-          return statisticsService.getMaxHearRateByActivityType(activitiesApi, code,
-                  createdAt);
+          return statisticsService.getMaxHearRateByActivityType(activitiesApi, createdAt);
 
      }
 

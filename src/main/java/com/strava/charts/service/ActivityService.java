@@ -48,7 +48,7 @@ public class ActivityService {
                activities.addAll(
                        activitiesApi.getLoggedInAthleteActivities(beforeEpoch, afterEpoch,
                                1, 200));
-               log.info("found {} activities", activities.size());
+               log.info("found {} activities", activities.size());
           } catch (ApiException ex) {
                log.error("Error getting athlete activities", ex);
           }
