@@ -2,30 +2,29 @@ package com.strava.charts.service;
 
 import com.strava.charts.model.DailyProgressModel;
 import com.strava.charts.model.DailyRideRecord;
+import com.strava.charts.util.ActivityUtil;
 import io.swagger.client.ApiException;
 import io.swagger.client.api.ActivitiesApi;
 import io.swagger.client.model.SummaryActivity;
+import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.threeten.bp.OffsetDateTime;
-
-import java.text.DecimalFormat;
-import java.time.LocalDateTime;
-import java.time.Month;
-import java.time.ZoneOffset;
-import java.util.*;
 
 @Service
 @Slf4j
 public class ActivityService {
 
     private final DecimalFormat decimalFormat = new DecimalFormat("#####.00");
-    private static final List<String> DISTANCE_INTERVALS = Arrays.asList("-60", "60-90", "90-120", "120-150", "150-180", "+180");
-
-    @Autowired
-    private ActivityService activityService;
-
+    private static final List<String> DISTANCE_INTERVALS = Arrays.asList("-60", "60-90",
+            "90-120", "120-150", "150-180", "+180");
 
     /**
      * Return all athlete's activities of a month determined by a reference date
@@ -34,17 +33,20 @@ public class ActivityService {
      * @param referenceDate
      * @return
      */
-    public List<SummaryActivity> getMonthYearActivities(ActivitiesApi activitiesApi, Long referenceDate, boolean monthly) {
+    public List<SummaryActivity> getMonthYearActivities(ActivitiesApi activitiesApi,
+            Long referenceDate, boolean monthly) {
 
         final List<SummaryActivity> activities = new ArrayList<>();
 
-        final List<Long> epochs = getAfterBeforeDate(referenceDate, monthly);
+        final List<Long> epochs = ActivityUtil.getAfterBeforeDate(referenceDate, monthly);
 
         final Integer beforeEpoch = epochs.get(1).intValue();
         final Integer afterEpoch = epochs.get(0).intValue();
 
         try {
-            activities.addAll(activitiesApi.getLoggedInAthleteActivities(beforeEpoch, afterEpoch, 1, 200));
+            activities.addAll(
+                    activitiesApi.getLoggedInAthleteActivities(beforeEpoch, afterEpoch, 1,
+                            200));
             log.info("found {} activities", activities.size());
         } catch (ApiException ex) {
             log.error("Error getting athlete activities", ex);
@@ -62,7 +64,8 @@ public class ActivityService {
         Map<Integer, Integer> movingTimeByDay = new HashMap<>();
         Map<Integer, Integer> elapsedTimeByDay = new HashMap<>();
 
-        OffsetDateTime activityDateTime = activities.stream().findFirst().get().getStartDateLocal();
+        OffsetDateTime activityDateTime = activities.stream().findFirst().get()
+                .getStartDateLocal();
         activities.forEach(activity -> {
             final int dayOfMonth = activity.getStartDateLocal().getDayOfMonth();
             distanceByDay.computeIfAbsent(dayOfMonth, k -> 0.0);
@@ -73,9 +76,12 @@ public class ActivityService {
             final Integer existingMovingTime = movingTimeByDay.get(dayOfMonth);
             final Integer existingElapsedTime = elapsedTimeByDay.get(dayOfMonth);
 
-            distanceByDay.put(dayOfMonth, (activity.getDistance() + existingDistance) / 1000);
-            movingTimeByDay.put(dayOfMonth, (activity.getMovingTime() + existingMovingTime));
-            elapsedTimeByDay.put(dayOfMonth, (activity.getElapsedTime() + existingElapsedTime));
+            distanceByDay.put(dayOfMonth,
+                    (activity.getDistance() + existingDistance) / 1000);
+            movingTimeByDay.put(dayOfMonth,
+                    (activity.getMovingTime() + existingMovingTime));
+            elapsedTimeByDay.put(dayOfMonth,
+                    (activity.getElapsedTime() + existingElapsedTime));
         });
 
         // add days with zero activity
@@ -103,13 +109,13 @@ public class ActivityService {
             final Integer movingTime = movingTimeByDay.get(key);
             final Integer elapsedTime = elapsedTimeByDay.get(key);
             final Integer stoppedTime = elapsedTime - movingTime;
-            final Double relativeMovingTime = distance == 0 ? 0 : (movingTime * distance / elapsedTime);
-            final Double relativeStoppedTime = distance == 0 ? 0 : (stoppedTime * distance / elapsedTime);
+            final Double relativeMovingTime =
+                    distance == 0 ? 0 : (movingTime * distance / elapsedTime);
+            final Double relativeStoppedTime =
+                    distance == 0 ? 0 : (stoppedTime * distance / elapsedTime);
             DailyRideRecord dailyRideRecord = new DailyRideRecord(key,
-                    decimalFormat.format(distance),
-                    decimalFormat.format(movingTime),
-                    decimalFormat.format(elapsedTime),
-                    decimalFormat.format(stoppedTime),
+                    decimalFormat.format(distance), decimalFormat.format(movingTime),
+                    decimalFormat.format(elapsedTime), decimalFormat.format(stoppedTime),
                     decimalFormat.format(relativeMovingTime),
                     decimalFormat.format(relativeStoppedTime));
             dailyDailyRideRecords.add(dailyRideRecord);
@@ -125,7 +131,8 @@ public class ActivityService {
      * @param activities
      * @return
      */
-    public Map<String, List<SummaryActivity>> buildRidesByDistanceMap(Set<SummaryActivity> activities) {
+    public Map<String, List<SummaryActivity>> buildRidesByDistanceMap(
+            Set<SummaryActivity> activities) {
         Map<String, List<SummaryActivity>> result = new HashMap<>();
         activities.forEach(activity -> {
             final Float distance = activity.getDistance() / 1000;
@@ -149,7 +156,8 @@ public class ActivityService {
         return result;
     }
 
-    private void addToMap(Map<String, List<SummaryActivity>> result, String key, SummaryActivity activity) {
+    private void addToMap(Map<String, List<SummaryActivity>> result, String key,
+            SummaryActivity activity) {
         List<SummaryActivity> _activities = result.get(key);
         if (_activities == null) {
             _activities = new ArrayList<>();
@@ -167,18 +175,6 @@ public class ActivityService {
         }
         return daysOfMonth;
 
-    }
-
-    private List<Long> getAfterBeforeDate(Long date, boolean monthly) {
-        final LocalDateTime dateTime = LocalDateTime.ofEpochSecond(date, 0, ZoneOffset.UTC);
-        LocalDateTime after = LocalDateTime.of(dateTime.getYear(), monthly ? dateTime.getMonth() : Month.JANUARY, 1, 0, 0, 0, 0);
-        LocalDateTime before = monthly ? after.plusMonths(1) : after.plusYears(1);
-
-        List<Long> result = new ArrayList<>();
-        result.add(after.toEpochSecond(ZoneOffset.UTC));
-        result.add(before.toEpochSecond(ZoneOffset.UTC));
-
-        return result;
     }
 
 }
