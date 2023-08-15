@@ -2,8 +2,8 @@ package com.strava.charts.controller;
 
 import com.strava.charts.model.DailyProgressModel;
 import com.strava.charts.model.RideByDistanceRecord;
-import com.strava.charts.service.ActivityService;
 import com.strava.charts.service.AuthorizationService;
+import com.strava.charts.service.ChartService;
 import com.strava.charts.util.ActivityUtil;
 import io.micrometer.core.annotation.Timed;
 import io.swagger.annotations.ApiOperation;
@@ -33,19 +33,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ChartController {
 
-     private String accessToken;
-
      @Autowired
      AuthorizationService authorisationService;
 
      @Autowired
-     ActivityService activityService;
+     ChartService chartService;
 
      @ApiOperation(value = "generateActivityChart", tags = "activity-api")
      @RequestMapping(value = "/_generate-activity-chart", produces = {
              "application/json"}, method = RequestMethod.GET)
      public ResponseEntity<DailyProgressModel> generateActivityChart(
-             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code", required = true) String code,
+             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code") String code,
              @ApiParam(name = "referenceDate", value = "reference date", example = "159873833") @RequestParam(value = "referenceDate", required = false) String referenceDate) {
 
           final List<SummaryActivity> activities = getAthleteActivities(code,
@@ -56,7 +54,7 @@ public class ChartController {
           DailyProgressModel dailyProgressModel = null;
           for (ActivityType type : activitiesByType.keySet()) {
                if (ActivityType.RIDE.equals(type)) {
-                    dailyProgressModel = activityService.buildDailyDataPoints(
+                    dailyProgressModel = chartService.buildDailyDataPoints(
                             activitiesByType.get(type));
                }
           }
@@ -68,23 +66,23 @@ public class ChartController {
      @RequestMapping(value = "/_moving-by-elapsed-time-chart", produces = {
              "application/json"}, method = RequestMethod.GET)
      public ResponseEntity<DailyProgressModel> movingByElapsedTimeChart(
-             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code", required = true) String code,
+             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code") String code,
              @ApiParam(name = "referenceDate", value = "reference date", example = "159873833") @RequestParam(value = "referenceDate", required = false) String referenceDate) {
 
           final List<SummaryActivity> activities = getAthleteActivities(code,
                   referenceDate, Boolean.TRUE);
           final Map<ActivityType, Set<SummaryActivity>> activitiesByType = ActivityUtil.groupActivitiesByType(
                   activities);
-          final DailyProgressModel dailyProgressModel = activityService.buildDailyDataPoints(
+          final DailyProgressModel dailyProgressModel = chartService.buildDailyDataPoints(
                   activitiesByType.get(ActivityType.RIDE));
 
           final Map<String, List<SummaryActivity>> ridesByDistanceRecord = getRidesByDistanceRecord(
                   code, referenceDate);
           final List<RideByDistanceRecord> records = new ArrayList<>();
-          ridesByDistanceRecord.entrySet().forEach(entry -> {
+          ridesByDistanceRecord.forEach((key, value) -> {
                RideByDistanceRecord record = new RideByDistanceRecord();
-               record.setGroupLabel(entry.getKey());
-               record.setCount(entry.getValue().size());
+               record.setGroupLabel(key);
+               record.setCount(value.size());
                records.add(record);
           });
 
@@ -96,18 +94,12 @@ public class ChartController {
      @RequestMapping(value = "/_rides-by-distance-chart", produces = {
              "application/json"}, method = RequestMethod.GET)
      public ResponseEntity<Map<String, List<SummaryActivity>>> getRidesByDistance(
-             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code", required = true) String code,
+             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code") String code,
              @ApiParam(name = "referenceDate", value = "reference date", example = "159873833") @RequestParam(value = "referenceDate", required = false) String referenceDate) {
 
           final Map<String, List<SummaryActivity>> ridesByDistance = getRidesByDistanceRecord(
                   code, referenceDate);
           return ResponseEntity.ok().body(ridesByDistance);
-     }
-
-     public void getDistanceOverTime(String code, String referenceDate) {
-          final List<SummaryActivity> activities = getAthleteActivities(code,
-                  referenceDate, Boolean.FALSE);
-
      }
 
      private Map<String, List<SummaryActivity>> getRidesByDistanceRecord(String code,
@@ -118,19 +110,13 @@ public class ChartController {
                   activities);
           final Set<SummaryActivity> ridingActivities = activitiesByType.get(
                   ActivityType.RIDE);
-          final Map<String, List<SummaryActivity>> ridesByDistance = activityService.buildRidesByDistanceMap(
-                  ridingActivities);
-          return ridesByDistance;
+          return chartService.buildRidesByDistanceMap(ridingActivities);
      }
 
      private List<SummaryActivity> getAthleteActivities(String code, String referenceDate,
              boolean monthly) {
-          if (accessToken == null) {
-               accessToken = authorisationService.authorize(code);
-          }
 
-          ApiClient client = new ApiClient();
-          client.setAccessToken(accessToken);
+          ApiClient client = authorisationService.getAuthorizedApiClient(code);
 
           final ActivitiesApi activitiesApi = new ActivitiesApi(client);
 
@@ -138,7 +124,7 @@ public class ChartController {
                referenceDate = String.valueOf(
                        LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
           }
-          return activityService.getMonthYearActivities(activitiesApi,
+          return chartService.getMonthYearActivities(activitiesApi,
                   Long.valueOf(referenceDate), monthly);
      }
 

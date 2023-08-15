@@ -24,10 +24,8 @@ import org.threeten.bp.OffsetDateTime;
 @RestController
 public class StatisticsController {
 
-     private String accessToken;
-
      @Autowired
-     AuthorizationService authorisationService;
+     AuthorizationService authorizationService;
 
      @Autowired
      StatisticsService statisticsService;
@@ -36,15 +34,10 @@ public class StatisticsController {
      @RequestMapping(value = "/_get-max-heart-rate", produces = {
              "application/json"}, method = RequestMethod.GET)
      public int getMaxHeartRate(
-             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code", required = true) String code)
+             @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code") String code)
              throws ApiException {
 
-          if (accessToken == null) {
-               accessToken = authorisationService.authorize(code);
-          }
-
-          ApiClient client = new ApiClient();
-          client.setAccessToken(accessToken);
+          ApiClient client = authorizationService.getAuthorizedApiClient(code);
 
           final ActivitiesApi activitiesApi = new ActivitiesApi(client);
           final AthletesApi athletesApi = new AthletesApi(client);

@@ -1,182 +1,110 @@
 package com.strava.charts.service;
 
-import com.strava.charts.model.DailyProgressModel;
-import com.strava.charts.model.DailyRideRecord;
-import com.strava.charts.util.ActivityUtil;
+import com.strava.charts.model.primary.Activity;
+import io.swagger.client.ApiClient;
 import io.swagger.client.ApiException;
 import io.swagger.client.api.ActivitiesApi;
+import io.swagger.client.api.AthletesApi;
+import io.swagger.client.model.ActivityType;
 import io.swagger.client.model.SummaryActivity;
-import java.text.DecimalFormat;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
+import java.util.stream.Collectors;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.threeten.bp.OffsetDateTime;
 
 @Service
 @Slf4j
 public class ActivityService {
 
-     private final DecimalFormat decimalFormat = new DecimalFormat("#####.00");
-     private static final List<String> DISTANCE_INTERVALS = Arrays.asList("-60", "60-90",
-             "90-120", "120-150", "150-180", "+180");
+     @SneakyThrows
+     public Integer importActivities(final ApiClient client) {
+          final ActivitiesApi activitiesApi = new ActivitiesApi(client);
+          final AthletesApi athletesApi = new AthletesApi(client);
 
-     /**
-      * Return all athlete's activities of a month determined by a reference date
-      *
-      * @param activitiesApi
-      * @param referenceDate
-      * @return
-      */
-     public List<SummaryActivity> getMonthYearActivities(ActivitiesApi activitiesApi,
-             Long referenceDate, boolean monthly) {
+          final Map<Long, Activity> activityById = new HashMap<>();
 
-          final List<SummaryActivity> activities = new ArrayList<>();
+          final Integer beforeEpoch = Long.valueOf(
+                  LocalDateTime.now().toEpochSecond(ZoneOffset.UTC)).intValue();
+          final Integer afterEpoch = (int) athletesApi.getLoggedInAthlete().getCreatedAt()
+                  .toEpochSecond();
 
-          final List<Long> epochs = ActivityUtil.getAfterBeforeDate(referenceDate,
-                  monthly);
-
-          final Integer beforeEpoch = epochs.get(1).intValue();
-          final Integer afterEpoch = epochs.get(0).intValue();
-
-          try {
-               activities.addAll(
-                       activitiesApi.getLoggedInAthleteActivities(beforeEpoch, afterEpoch,
-                               1, 200));
-               log.info("found {} activities", activities.size());
-          } catch (ApiException ex) {
-               log.error("Error getting athlete activities", ex);
-          }
-          return activities;
-     }
-
-     /**
-      * @param activities
-      * @return
-      */
-     public DailyProgressModel buildDailyDataPoints(Set<SummaryActivity> activities) {
-
-          Map<Integer, Double> distanceByDay = new HashMap<>();
-          Map<Integer, Integer> movingTimeByDay = new HashMap<>();
-          Map<Integer, Integer> elapsedTimeByDay = new HashMap<>();
-
-          OffsetDateTime activityDateTime = activities.stream().findFirst().get()
-                  .getStartDateLocal();
+          final List<Activity> activities = getAllActivities(activitiesApi, beforeEpoch,
+                  afterEpoch);
           activities.forEach(activity -> {
-               final int dayOfMonth = activity.getStartDateLocal().getDayOfMonth();
-               distanceByDay.computeIfAbsent(dayOfMonth, k -> 0.0);
-               movingTimeByDay.computeIfAbsent(dayOfMonth, k -> 0);
-               elapsedTimeByDay.computeIfAbsent(dayOfMonth, k -> 0);
-
-               final Double existingDistance = distanceByDay.get(dayOfMonth);
-               final Integer existingMovingTime = movingTimeByDay.get(dayOfMonth);
-               final Integer existingElapsedTime = elapsedTimeByDay.get(dayOfMonth);
-
-               distanceByDay.put(dayOfMonth,
-                       (activity.getDistance() + existingDistance) / 1000);
-               movingTimeByDay.put(dayOfMonth,
-                       (activity.getMovingTime() + existingMovingTime));
-               elapsedTimeByDay.put(dayOfMonth,
-                       (activity.getElapsedTime() + existingElapsedTime));
+               activityById.putIfAbsent(activity.getId(), activity);
+               activityRepository.save(activity);
           });
 
-          // add days with zero activity
-          final List<Integer> daysOfActivityMonth = getDaysOfMonth(activityDateTime);
-          daysOfActivityMonth.forEach(key -> {
-               if (!distanceByDay.keySet().contains(key)) {
-                    distanceByDay.put(key, 0.0);
-               }
+          List<Long> activityIds = activities.stream()
+                  .filter(activity -> ActivityType.RUN.equals(activity.getType()))
+                  .map(Activity::getId).collect(Collectors.toList());
 
-               if (!movingTimeByDay.keySet().contains(key)) {
-                    movingTimeByDay.put(key, 0);
-               }
+          log.info("for the given time, there are {} running activities",
+                  activityIds.size());
 
-               if (!elapsedTimeByDay.keySet().contains(key)) {
-                    elapsedTimeByDay.put(key, 0);
+          final List<Integer> heartRateList = new ArrayList<>();
+          activityIds.forEach(id -> {
+               try {
+                    Integer hr = activitiesApi.getActivityById(id, Boolean.TRUE)
+                            .getSegmentEfforts().stream().map(detailedSegmentEffort ->
+                                    detailedSegmentEffort.getMaxHeartrate() != null
+                                            ? detailedSegmentEffort.getMaxHeartrate()
+                                            .intValue() : 0).max(Integer::compareTo)
+                            .orElse(0);
+
+                    //persisting the data
+                    Activity activity = activityById.get(id);
+                    activity.setMaxHeartRate(hr);
+                    activityRepository.save(activity);
+
+                    heartRateList.add(hr);
+                    log.info("Activity with id {} has a max heart rate of {}", id, hr);
+
+               } catch (ApiException e) {
+                    throw new RuntimeException(e);
                }
           });
 
-          final List<Integer> keys = new ArrayList<>(distanceByDay.keySet());
-          Collections.sort(keys);
-
-          List<DailyRideRecord> dailyDailyRideRecords = new ArrayList<>();
-          for (Integer key : keys) {
-               final Double distance = distanceByDay.get(key);
-               final Integer movingTime = movingTimeByDay.get(key);
-               final Integer elapsedTime = elapsedTimeByDay.get(key);
-               final Integer stoppedTime = elapsedTime - movingTime;
-               final Double relativeMovingTime =
-                       distance == 0 ? 0 : (movingTime * distance / elapsedTime);
-               final Double relativeStoppedTime =
-                       distance == 0 ? 0 : (stoppedTime * distance / elapsedTime);
-               DailyRideRecord dailyRideRecord = new DailyRideRecord(key,
-                       decimalFormat.format(distance), decimalFormat.format(movingTime),
-                       decimalFormat.format(elapsedTime),
-                       decimalFormat.format(stoppedTime),
-                       decimalFormat.format(relativeMovingTime),
-                       decimalFormat.format(relativeStoppedTime));
-               dailyDailyRideRecords.add(dailyRideRecord);
-          }
-
-          DailyProgressModel model = new DailyProgressModel();
-          model.getDailyRideRecords().addAll(dailyDailyRideRecords);
-
-          return model;
+          return 0;
      }
 
-     /**
-      * @param activities
-      * @return
-      */
-     public Map<String, List<SummaryActivity>> buildRidesByDistanceMap(
-             Set<SummaryActivity> activities) {
-          Map<String, List<SummaryActivity>> result = new HashMap<>();
-          activities.forEach(activity -> {
-               final Float distance = activity.getDistance() / 1000;
-               String key = "";
-               if (distance < 60) {
-                    key = "-60";
-               } else if (distance >= 60 && distance < 90) {
-                    key = "60-90";
-               } else if (distance >= 90 && distance < 120) {
-                    key = "90-120";
-               } else if (distance >= 120 && distance < 150) {
-                    key = "120-150";
-               } else if (distance >= 150 && distance < 180) {
-                    key = "150-180";
-               } else if (distance >= 180) {
-                    key = "+1800";
+     private List<Activity> getAllActivities(final ActivitiesApi activitiesApi,
+             final Integer beforeEpoch, final Integer afterEpoch) throws ApiException {
+          //check data in db first
+          final List<Activity> activityList = activityRepository.findAll();
+          Optional<Long> max = activityList.stream().map(Activity::getCreated)
+                  .max(Long::compareTo);
+          long latestTimestamp = max.isPresent() ? max.get() : beforeEpoch;
+
+          boolean fetchLatestData = fetchLatestData(activitiesApi, beforeEpoch,
+                  (int) latestTimestamp);
+
+          if (fetchLatestData) {
+
+               boolean hasMoreItems = true;
+               int pageNumber = 1;
+               int itemsPerPage = 30;
+               while (hasMoreItems) {
+                    log.info("Retrieving {} items at page {}", itemsPerPage, pageNumber);
+                    List<SummaryActivity> activities = activitiesApi.getLoggedInAthleteActivities(
+                            beforeEpoch, (int) latestTimestamp, pageNumber, itemsPerPage);
+                    activityList.addAll(
+                            activities.stream().map(Activity::convertToActivity)
+                                    .collect(Collectors.toList()));
+                    pageNumber++;
+                    hasMoreItems = activities.size() == itemsPerPage;
                }
-               addToMap(result, key, activity);
-          });
-
-          return result;
-     }
-
-     private void addToMap(Map<String, List<SummaryActivity>> result, String key,
-             SummaryActivity activity) {
-          List<SummaryActivity> _activities = result.get(key);
-          if (_activities == null) {
-               _activities = new ArrayList<>();
-               result.put(key, _activities);
+               log.info("retrieved {} activities", activityList.size());
           }
-          _activities.add(activity);
-     }
 
-     private List<Integer> getDaysOfMonth(OffsetDateTime time) {
-          boolean leapYear = time.getYear() % 4 == 0;
-          final int monthLength = time.getMonth().length(leapYear);
-          List<Integer> daysOfMonth = new ArrayList<>();
-          for (int i = 1; i <= monthLength; i++) {
-               daysOfMonth.add(i);
-          }
-          return daysOfMonth;
-
+          return activityList;
      }
 
 }
