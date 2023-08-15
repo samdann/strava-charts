@@ -17,8 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TimeZone;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -145,14 +143,12 @@ public class ActivityService {
 
           boolean throttle = activityIds.size() > STRAVA_API_LIMIT;
           activityIds.forEach(id -> {
-
-               new Timer().schedule(new TimerTask() {
-                    @Override
-                    public void run() {
-                         addMaxHearRate(activitiesApi, id, activityById);
-                    }
-               }, throttle ? DELAY_TIME : 150);
-
+               try {
+                    Thread.sleep(throttle ? DELAY_TIME : 150);
+                    addMaxHearRate(activitiesApi, id, activityById);
+               } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+               }
           });
      }
 
@@ -173,6 +169,7 @@ public class ActivityService {
           //persisting the data
           Activity activity = activityById.get(id);
           activity.setMaxHeartRate(hr);
+          activity.setUpdated(LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
           activityRepository.save(activity);
 
           log.info("Activity with id {} has a max heart rate of {}", id, hr);
