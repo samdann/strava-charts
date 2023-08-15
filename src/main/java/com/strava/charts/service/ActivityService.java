@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TimeZone;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.stream.Collectors;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +27,9 @@ import org.springframework.stereotype.Service;
 @Service
 @Slf4j
 public class ActivityService {
+
+     private static final int STRAVA_API_LIMIT = 600;
+     private static final long DELAY_TIME = 1500;
 
      @Autowired
      ActivityRepository activityRepository;
@@ -47,38 +52,19 @@ public class ActivityService {
                   afterEpoch);
           activities.forEach(activity -> {
                activityById.putIfAbsent(activity.getId(), activity);
-               activityRepository.save(activity);
           });
+
+          log.info("{} activities have been imported", activities.size());
 
           List<Long> activityIds = activities.stream()
-                  .filter(activity -> ActivityType.RUN.equals(activity.getType()))
+                  .filter(activity -> ActivityType.RUN.equals(activity.getType())
+                          || ActivityType.RIDE.equals(activity.getType()))
                   .map(Activity::getId).collect(Collectors.toList());
 
-          log.info("for the given time, there are {} running activities",
-                  activityIds.size());
+          //Enrich the activities with heart rate data
+          enrichActivityData(activityIds, activitiesApi, activityById);
 
-          activityIds.forEach(id -> {
-               try {
-                    Integer hr = activitiesApi.getActivityById(id, Boolean.TRUE)
-                            .getSegmentEfforts().stream().map(detailedSegmentEffort ->
-                                    detailedSegmentEffort.getMaxHeartrate() != null
-                                            ? detailedSegmentEffort.getMaxHeartrate()
-                                            .intValue() : 0).max(Integer::compareTo)
-                            .orElse(0);
-
-                    //persisting the data
-                    Activity activity = activityById.get(id);
-                    activity.setMaxHeartRate(hr);
-                    activityRepository.save(activity);
-
-                    log.info("Activity with id {} has a max heart rate of {}", id, hr);
-
-               } catch (ApiException e) {
-                    throw new RuntimeException(e);
-               }
-          });
-
-          return 0;
+          return activityIds.size();
      }
 
      private List<Activity> getAllActivities(final ActivitiesApi activitiesApi,
@@ -111,6 +97,8 @@ public class ActivityService {
                     pageNumber++;
                     hasMoreItems = activities.size() == itemsPerPage;
                }
+
+               activityRepository.saveAll(activityList);
                log.info("retrieved {} activities...", activityList.size());
           }
 
@@ -129,6 +117,41 @@ public class ActivityService {
                   beforeEpoch, afterEpoch, 1, 1);
           return latestActivities.size() > 0;
 
+     }
+
+     private void enrichActivityData(final List<Long> activityIds,
+             final ActivitiesApi activitiesApi, final Map<Long, Activity> activityById) {
+          log.info("{} activities (Ride/Run) will be enriched with max heart rate data",
+                  activityIds.size());
+
+          boolean throttle = activityIds.size() > STRAVA_API_LIMIT;
+          activityIds.forEach(id -> {
+
+               new Timer().schedule(new TimerTask() {
+                    @Override
+                    public void run() {
+                         addMaxHearRate(activitiesApi, id, activityById);
+                    }
+               }, throttle ? DELAY_TIME : 150);
+
+          });
+     }
+
+     @SneakyThrows
+     private void addMaxHearRate(final ActivitiesApi activitiesApi, final Long id,
+             final Map<Long, Activity> activityById) {
+          int hr = activitiesApi.getActivityById(id, Boolean.TRUE).getSegmentEfforts()
+                  .stream().map(detailedSegmentEffort ->
+                          detailedSegmentEffort.getMaxHeartrate() != null
+                                  ? detailedSegmentEffort.getMaxHeartrate().intValue()
+                                  : 0).max(Integer::compareTo).orElse(0);
+
+          //persisting the data
+          Activity activity = activityById.get(id);
+          activity.setMaxHeartRate(hr);
+          activityRepository.save(activity);
+
+          log.info("Activity with id {} has a max heart rate of {}", id, hr);
      }
 
 }

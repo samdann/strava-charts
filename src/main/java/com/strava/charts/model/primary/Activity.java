@@ -31,8 +31,9 @@ public class Activity {
                   .distance(sumActivity.getDistance())
                   .elapsedTime(sumActivity.getElapsedTime())
                   .movingTime(sumActivity.getMovingTime())
-                  .averageWatts(sumActivity.getAverageWatts())
-                  .maxWatts(Float.valueOf(sumActivity.getMaxWatts()))
+                  .averageWatts(sumActivity.getAverageWatts()).maxWatts(
+                          (float) (sumActivity.getMaxWatts() != null
+                                  ? sumActivity.getMaxWatts() : 0))
                   .type(sumActivity.getType())
                   .created(sumActivity.getStartDate().toEpochSecond()).build();
      }
