@@ -20,6 +20,7 @@ public class Activity {
      private Integer elapsedTime;
      private ActivityType type;
      private Long created;
+     private Long updated;
      private Integer maxHeartRate;
      private Float averageWatts;
      private Float maxWatts;

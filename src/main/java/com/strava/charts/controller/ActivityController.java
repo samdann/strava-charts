@@ -34,8 +34,8 @@ public class ActivityController {
              @ApiParam(name = "code", value = "authorization code") @RequestParam(value = "code", required = true) String code) {
 
           ApiClient client = authorizationService.getAuthorizedApiClient(code);
-          Integer activitiesImportedCount = activityService.importActivities(client);
+          activityService.importActivities(client);
 
-          return ResponseEntity.ok().body(activitiesImportedCount.toString());
+          return ResponseEntity.ok().build();
      }
 }
