@@ -6,6 +6,7 @@ import io.swagger.client.ApiException;
 import io.swagger.client.api.ActivitiesApi;
 import io.swagger.client.model.ActivityType;
 import io.swagger.client.model.SummaryActivity;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -13,7 +14,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.TimeZone;
 import java.util.stream.Collectors;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -41,19 +45,16 @@ public class StatisticsService {
                   LocalDateTime.now().toEpochSecond(ZoneOffset.UTC)).intValue();
           final Integer afterEpoch = Long.valueOf(createdAt.toEpochSecond()).intValue();
 
-          final List<SummaryActivity> summaryActivities = getAllActivities(activitiesApi,
-                  beforeEpoch, afterEpoch);
-          summaryActivities.forEach(sumActivity -> {
-               Activity activity = Activity.builder().id(sumActivity.getId())
-                       .type(sumActivity.getType())
-                       .created(sumActivity.getStartDate().toEpochSecond()).build();
+          final List<Activity> activities = getAllActivities(activitiesApi, beforeEpoch,
+                  afterEpoch);
+          activities.forEach(activity -> {
                activityById.putIfAbsent(activity.getId(), activity);
                activityRepository.save(activity);
           });
 
-          List<Long> activityIds = summaryActivities.stream()
+          List<Long> activityIds = activities.stream()
                   .filter(activity -> ActivityType.RUN.equals(activity.getType()))
-                  .map(SummaryActivity::getId).collect(Collectors.toList());
+                  .map(Activity::getId).collect(Collectors.toList());
 
           log.info("for the given time, there are {} running activities",
                   activityIds.size());
@@ -85,26 +86,49 @@ public class StatisticsService {
           return heartRateList.get(0);
      }
 
-     private List<SummaryActivity> getAllActivities(final ActivitiesApi activitiesApi,
+     private List<Activity> getAllActivities(final ActivitiesApi activitiesApi,
              final Integer beforeEpoch, final Integer afterEpoch) throws ApiException {
           //check data in db first
-          List<Activity> activityList = activityRepository.findAll();
+          final List<Activity> activityList = activityRepository.findAll();
+          Optional<Long> max = activityList.stream().map(Activity::getCreated)
+                  .max(Long::compareTo);
+          long latestTimestamp = max.isPresent() ? max.get() : beforeEpoch;
 
-          // TODO who to determine if a new pull from the API is required
+          boolean fetchLatestData = fetchLatestData(activitiesApi, beforeEpoch,
+                  (int) latestTimestamp);
 
-          boolean hasMoreItems = true;
-          int pageNumber = 1;
-          int itemsPerPage = 30;
-          final List<SummaryActivity> result = new ArrayList<>();
-          while (hasMoreItems) {
-               log.info("Retrieving {} items at page {}", itemsPerPage, pageNumber);
-               List<SummaryActivity> activities = activitiesApi.getLoggedInAthleteActivities(
-                       beforeEpoch, afterEpoch, pageNumber, itemsPerPage);
-               result.addAll(activities);
-               pageNumber++;
-               hasMoreItems = activities.size() == itemsPerPage;
+          if (fetchLatestData) {
+
+               boolean hasMoreItems = true;
+               int pageNumber = 1;
+               int itemsPerPage = 30;
+               while (hasMoreItems) {
+                    log.info("Retrieving {} items at page {}", itemsPerPage, pageNumber);
+                    List<SummaryActivity> activities = activitiesApi.getLoggedInAthleteActivities(
+                            beforeEpoch, (int) latestTimestamp, pageNumber, itemsPerPage);
+                    activityList.addAll(
+                            activities.stream().map(Activity::convertToActivity)
+                                    .collect(Collectors.toList()));
+                    pageNumber++;
+                    hasMoreItems = activities.size() == itemsPerPage;
+               }
+               log.info("retrieved {} activities", activityList.size());
           }
-          log.info("retrieved {} activities", result.size());
-          return result;
+
+          return activityList;
+     }
+
+     @SneakyThrows
+     private boolean fetchLatestData(final ActivitiesApi activitiesApi,
+             final Integer beforeEpoch, final Integer afterEpoch) {
+
+          LocalDateTime time = LocalDateTime.ofInstant(Instant.ofEpochMilli(beforeEpoch),
+                  TimeZone.getDefault().toZoneId());
+          log.info("Checking for activities after {}", time);
+
+          List<SummaryActivity> latestActivities = activitiesApi.getLoggedInAthleteActivities(
+                  beforeEpoch, afterEpoch, 1, 1);
+          return latestActivities.size() > 0;
+
      }
 }
