@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 @Data
 @Builder
@@ -13,6 +14,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 public class Activity {
 
      @Id
+     @Field
      private Long id;
      private String name;
      private Float distance;
@@ -26,17 +28,19 @@ public class Activity {
      private Float maxWatts;
      private Float averageSpeed;
      private Float maxSpeed;
+     private Boolean faultySensorData;
 
      public static Activity convertToActivity(final SummaryActivity sumActivity) {
           return Activity.builder().id(sumActivity.getId()).name(sumActivity.getName())
                   .distance(sumActivity.getDistance())
-                  .elapsedTime(sumActivity.getElapsedTime())
                   .movingTime(sumActivity.getMovingTime())
+                  .elapsedTime(sumActivity.getElapsedTime()).type(sumActivity.getType())
+                  .created(sumActivity.getStartDate().toEpochSecond())
                   .averageWatts(sumActivity.getAverageWatts()).maxWatts(
                           (float) (sumActivity.getMaxWatts() != null
                                   ? sumActivity.getMaxWatts() : 0))
-                  .type(sumActivity.getType())
-                  .created(sumActivity.getStartDate().toEpochSecond()).build();
+                  .averageSpeed(sumActivity.getAverageSpeed())
+                  .maxSpeed(sumActivity.getMaxSpeed()).build();
      }
 
 }

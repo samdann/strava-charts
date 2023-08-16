@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.Month;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,9 @@ public class ActivityService {
      @Autowired
      ActivityRepository activityRepository;
 
+     /**
+      * @param client ApiClient
+      */
      public void importActivities(final ApiClient client) {
           log.info("Importing all activities...");
 
@@ -60,6 +64,21 @@ public class ActivityService {
 
           //Enrich the activities with heart rate data
           enrichActivityData(activities, activitiesApi, activityById);
+     }
+
+     /**
+      * @param activityIds list of activity ids to flag
+      */
+     public void flagCorruptedActivities(List<String> activityIds) {
+          final List<Activity> activities = new ArrayList<>();
+
+          activityRepository.findAllById(activityIds).forEach(activities::add);
+          activities.forEach(activity -> activity.setFaultySensorData(true));
+
+          activityRepository.saveAll(activities);
+
+          log.info("Flagged {} activities as corrupted: i.e faultySensorData = true",
+                  activities.size());
      }
 
      private List<Activity> getAllActivities(final ActivitiesApi activitiesApi,

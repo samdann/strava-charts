@@ -6,11 +6,13 @@ import java.time.LocalDateTime;
 import java.time.Month;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.experimental.UtilityClass;
 
 @UtilityClass
@@ -44,6 +46,10 @@ public class ActivityUtil {
           result.add(before.toEpochSecond(ZoneOffset.UTC));
 
           return result;
+     }
+
+     public static List<String> getListIds(final String idsList) {
+          return Arrays.stream(idsList.split(";")).collect(Collectors.toList());
      }
 
 }
