@@ -21,7 +21,9 @@ public class StatisticsService {
      public Activity getMaxHearRateByActivityType() {
 
           return activityRepository.findAll().stream()
-                  .filter(activity -> ActivityType.RUN.equals(activity.getType()))
+                  .filter(activity -> ActivityType.RUN.equals(activity.getType()) && (
+                          activity.getFaultySensorData() == null
+                                  || !activity.getFaultySensorData()))
                   .max(Comparator.comparingInt(Activity::getMaxHeartRate)).orElse(null);
 
      }
